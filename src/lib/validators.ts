@@ -15,6 +15,7 @@ export const profileSchema = z.object({
   height_cm: z.coerce.number().positive().optional().nullable(),
   weight_kg: z.coerce.number().positive().optional().nullable(),
   medical_notes: z.string().optional().nullable(),
+  avatar_url: z.string().optional().nullable(),
 });
 
 // Client creation (admin)
