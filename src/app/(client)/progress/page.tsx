@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { createProgressLog } from "@/actions/progress";
+import {
+  uploadProgressPhotoAction,
+  getSignedImageUrlAction,
+} from "@/actions/cloudinary";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { FormField } from "@/components/shared/form-field";
@@ -20,8 +24,58 @@ import {
 import { Spinner } from "@/components/shared/loading";
 import { formatDate } from "@/lib/utils";
 import { toast } from "sonner";
-import { TrendingUp, Plus, Scale, Ruler } from "lucide-react";
+import { TrendingUp, Plus, Scale, Ruler, Image as ImageIcon } from "lucide-react";
 import type { ProgressLog } from "@/types/database";
+
+// Component to display progress photos with signed URLs
+function ProgressPhotos({ photoPublicIds }: { photoPublicIds: string[] }) {
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(true);
+
+  useEffect(() => {
+    async function loadPhotos() {
+      const results = await Promise.all(
+        photoPublicIds.map((publicId) => getSignedImageUrlAction(publicId))
+      );
+      const urls = results
+        .filter((r) => r.success && r.url)
+        .map((r) => r.url);
+      setPhotoUrls(urls);
+      setLoadingPhotos(false);
+    }
+    loadPhotos();
+  }, [photoPublicIds]);
+
+  if (loadingPhotos) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner className="h-4 w-4" />
+        Loading photos...
+      </div>
+    );
+  }
+
+  if (photoUrls.length === 0) return null;
+
+  return (
+    <div className="mt-3">
+      <p className="mb-2 flex items-center gap-2 text-sm font-medium">
+        <ImageIcon className="h-4 w-4" />
+        Progress Photos
+      </p>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {photoUrls.map((url, index) => (
+          <img
+            key={index}
+            src={url}
+            alt={`Progress photo ${index + 1}`}
+            className="h-32 w-full rounded-lg object-cover"
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function ClientProgressPage() {
   const [logs, setLogs] = useState<ProgressLog[]>([]);
@@ -67,9 +121,9 @@ export default function ClientProgressPage() {
     e.preventDefault();
     setSaving(true);
 
-    let photoUrls: string[] = [];
+    let photoPublicIds: string[] = [];
 
-    // Upload photos if any
+    // Upload photos to Cloudinary if any
     if (photos.length > 0) {
       const {
         data: { user },
@@ -80,21 +134,15 @@ export default function ClientProgressPage() {
         return;
       }
 
+      // Upload each photo to Cloudinary using server action
       for (const photo of photos) {
-        const fileExt = photo.name.split(".").pop();
-        const fileName = `${user.id}/${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2)}.${fileExt}`;
-
-        const { error } = await supabase.storage
-          .from("progress-photos")
-          .upload(fileName, photo);
-
-        if (!error) {
-          const {
-            data: { publicUrl },
-          } = supabase.storage.from("progress-photos").getPublicUrl(fileName);
-          photoUrls.push(publicUrl);
+        const formData = new FormData();
+        formData.append("file", photo);
+        const result = await uploadProgressPhotoAction(formData, user.id);
+        if (result.success && result.publicId) {
+          photoPublicIds.push(result.publicId);
+        } else {
+          toast.error(`Failed to upload ${photo.name}: ${result.error || "Unknown error"}`);
         }
       }
     }
@@ -111,7 +159,7 @@ export default function ClientProgressPage() {
         thigh_cm: form.thigh_cm ? parseFloat(form.thigh_cm) : null,
         notes: form.notes || null,
       },
-      photoUrls.length > 0 ? photoUrls : undefined
+      photoPublicIds.length > 0 ? photoPublicIds : undefined
     );
 
     if (result.error) {
@@ -347,6 +395,9 @@ export default function ClientProgressPage() {
                   <p className="mt-3 text-sm text-muted-foreground">
                     {log.notes}
                   </p>
+                )}
+                {log.photo_urls && log.photo_urls.length > 0 && (
+                  <ProgressPhotos photoPublicIds={log.photo_urls} />
                 )}
               </CardContent>
             </Card>

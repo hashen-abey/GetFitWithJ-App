@@ -3,13 +3,17 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { updateProfile } from "@/actions/clients";
+import {
+  uploadProfilePictureAction,
+  getSignedImageUrlAction,
+} from "@/actions/cloudinary";
 import { PageHeader } from "@/components/shared/page-header";
 import { FormField } from "@/components/shared/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -21,13 +25,15 @@ import {
 import { Spinner } from "@/components/shared/loading";
 import { formatDate, getInitials, isSubscriptionActive } from "@/lib/utils";
 import { toast } from "sonner";
-import { Save, User } from "lucide-react";
+import { Save, User, Upload } from "lucide-react";
 import type { Profile } from "@/types/database";
 
 export default function ClientProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string>("");
   const [form, setForm] = useState({
     full_name: "",
     phone: "",
@@ -63,11 +69,87 @@ export default function ClientProfilePage() {
           weight_kg: data.weight_kg?.toString() || "",
           medical_notes: data.medical_notes || "",
         });
+
+        // Load avatar image if exists (Cloudinary public_id)
+        if (data.avatar_url) {
+          const result = await getSignedImageUrlAction(data.avatar_url);
+          if (result.success && result.url) {
+            setAvatarUrl(result.url);
+          }
+        }
       }
       setLoading(false);
     }
     load();
   }, []);
+
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("File size must be less than 5MB");
+      return;
+    }
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload an image file");
+      return;
+    }
+
+    setUploadingPhoto(true);
+
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("Not authenticated");
+        return;
+      }
+
+      // Upload to Cloudinary using server action
+      const formData = new FormData();
+      formData.append("file", file);
+      const result = await uploadProfilePictureAction(formData, user.id);
+
+      if (!result.success || !result.publicId) {
+        toast.error(result.error || "Upload failed");
+        return;
+      }
+
+      // Update profile with Cloudinary public_id
+      const updateResult = await updateProfile({
+        full_name: form.full_name,
+        phone: form.phone || null,
+        date_of_birth: form.date_of_birth || null,
+        gender: form.gender || null,
+        height_cm: form.height_cm ? parseFloat(form.height_cm) : null,
+        weight_kg: form.weight_kg ? parseFloat(form.weight_kg) : null,
+        medical_notes: form.medical_notes || null,
+        avatar_url: result.publicId,
+      });
+
+      if (updateResult.error) {
+        toast.error(updateResult.error);
+      } else {
+        toast.success("Profile picture updated");
+        // Get signed URL for display
+        const urlResult = await getSignedImageUrlAction(result.publicId);
+        if (urlResult.success && urlResult.url) {
+          setAvatarUrl(urlResult.url);
+        }
+      }
+    } catch (error) {
+      console.error("Upload error:", error);
+      toast.error("Failed to upload profile picture");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -81,6 +163,7 @@ export default function ClientProfilePage() {
       height_cm: form.height_cm ? parseFloat(form.height_cm) : null,
       weight_kg: form.weight_kg ? parseFloat(form.weight_kg) : null,
       medical_notes: form.medical_notes || null,
+      avatar_url: profile?.avatar_url || null,
     });
 
     if (result.error) {
@@ -110,12 +193,31 @@ export default function ClientProfilePage() {
       {/* Profile Header */}
       <Card>
         <CardContent className="flex items-center gap-4 p-6">
-          <Avatar className="h-16 w-16">
-            <AvatarFallback className="bg-primary/10 text-lg text-primary">
-              {getInitials(profile.full_name)}
-            </AvatarFallback>
-          </Avatar>
-          <div>
+          <div className="relative">
+            <Avatar className="h-16 w-16">
+              {avatarUrl ? (
+                <AvatarImage src={avatarUrl} alt={profile.full_name} />
+              ) : null}
+              <AvatarFallback className="bg-primary/10 text-lg text-primary">
+                {getInitials(profile.full_name)}
+              </AvatarFallback>
+            </Avatar>
+            <label
+              htmlFor="avatar-upload"
+              className="absolute bottom-0 right-0 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-primary text-white hover:bg-primary/90"
+            >
+              <Upload className="h-3 w-3" />
+              <input
+                id="avatar-upload"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={handlePhotoUpload}
+                disabled={uploadingPhoto}
+              />
+            </label>
+          </div>
+          <div className="flex-1">
             <h2 className="text-xl font-semibold">{profile.full_name}</h2>
             <p className="text-sm text-muted-foreground">{profile.email}</p>
             <div className="mt-1 flex items-center gap-2">
@@ -129,6 +231,12 @@ export default function ClientProfilePage() {
               )}
             </div>
           </div>
+          {uploadingPhoto && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Spinner className="h-4 w-4" />
+              Uploading...
+            </div>
+          )}
         </CardContent>
       </Card>
 

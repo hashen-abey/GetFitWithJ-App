@@ -7,15 +7,16 @@ This guide provides step-by-step instructions for setting up and deploying the G
 1. [Prerequisites](#prerequisites)
 2. [Project Overview](#project-overview)
 3. [Supabase Setup (Free Tier)](#supabase-setup-free-tier)
-4. [Local Development Setup](#local-development-setup)
-5. [Database Migration](#database-migration)
-6. [Storage Buckets Configuration](#storage-buckets-configuration)
-7. [Authentication Setup](#authentication-setup)
-8. [Vercel Deployment (Free Tier)](#vercel-deployment-free-tier)
-9. [Post-Deployment Configuration](#post-deployment-configuration)
-10. [Pricing Controls & Monitoring](#pricing-controls--monitoring)
-11. [Testing Your Setup](#testing-your-setup)
-12. [Troubleshooting](#troubleshooting)
+4. [Cloudinary Setup (Free Tier)](#cloudinary-setup-free-tier)
+5. [Local Development Setup](#local-development-setup)
+6. [Database Migration](#database-migration)
+7. [Storage Buckets Configuration](#storage-buckets-configuration)
+8. [Authentication Setup](#authentication-setup)
+9. [Vercel Deployment (Free Tier)](#vercel-deployment-free-tier)
+10. [Post-Deployment Configuration](#post-deployment-configuration)
+11. [Pricing Controls & Monitoring](#pricing-controls--monitoring)
+12. [Testing Your Setup](#testing-your-setup)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -28,6 +29,7 @@ Before you begin, ensure you have the following installed:
 - **Git** - [Download here](https://git-scm.com/)
 - A **GitHub account** (for version control and Vercel deployment)
 - A **Supabase account** (free tier) - [Sign up here](https://supabase.com/)
+- A **Cloudinary account** (free tier) - [Sign up here](https://cloudinary.com/)
 - A **Vercel account** (free tier) - [Sign up here](https://vercel.com/)
 
 ### Verify Prerequisites
@@ -60,7 +62,8 @@ git --version
 **Tech Stack:**
 - Next.js 14 (App Router)
 - TypeScript
-- Supabase (Authentication, Database, Storage)
+- Supabase (Authentication, Database, Storage for receipts)
+- Cloudinary (Image storage for profile pictures and progress photos)
 - Tailwind CSS
 - Radix UI Components
 
@@ -106,6 +109,60 @@ The Supabase free tier includes:
 
 ---
 
+## Cloudinary Setup (Free Tier)
+
+Cloudinary is used for storing and serving profile pictures and progress photos. It provides automatic image optimization, transformations, and secure private URLs.
+
+### Step 1: Create a Cloudinary Account
+
+1. Go to [https://cloudinary.com/users/register/free](https://cloudinary.com/users/register/free)
+2. Sign up for a free account
+3. Verify your email address
+4. Complete the onboarding process
+
+### Step 2: Get Your API Credentials
+
+1. Once logged in, go to your **Dashboard**
+2. You'll see your account details at the top:
+   - **Cloud Name** (e.g., `dxxxxxxxxxxxxx`)
+   - **API Key** (e.g., `123456789012345`)
+   - **API Secret** (click "Reveal" to see it - **keep this secret!**)
+3. Copy and save these credentials - you'll need them for configuration
+
+### Step 3: Configure Security Settings
+
+For this app, we use **private images** with signed URLs for security. No additional Cloudinary configuration is needed - the app handles this automatically.
+
+**Important Security Features:**
+- All images are uploaded as **private** (not publicly accessible)
+- **Signed URLs** are generated with expiration times (default: 1 hour)
+- Only authenticated users can view their own images
+- Images are organized by user ID in folders
+
+### Step 4: Understand Free Tier Limits
+
+The Cloudinary free tier includes:
+- ✅ **25 GB storage** (plenty for user photos)
+- ✅ **25 GB monthly bandwidth**
+- ✅ **25,000 monthly transformations**
+- ✅ **Unlimited image uploads**
+- ✅ **Automatic format optimization** (WebP, AVIF)
+- ✅ **Automatic quality optimization**
+
+**Cost Control Tip:** The free tier is very generous for small to medium-sized fitness coaching businesses. Monitor usage in the Cloudinary dashboard under **Reports** → **Usage**.
+
+### Step 5: Optional Image Optimization Settings
+
+You can enable additional features in your Cloudinary dashboard:
+
+1. Go to **Settings** → **Upload**
+2. **Recommended Settings:**
+   - ✅ Enable **Auto backup** (keeps a backup of originals)
+   - ✅ Enable **Auto tagging** (AI-powered image tagging)
+   - ⚠️ Keep **Overwrite** disabled (prevents accidental overwrites)
+
+---
+
 ## Local Development Setup
 
 ### Step 1: Clone the Repository
@@ -126,6 +183,7 @@ npm install
 This will install all dependencies listed in `package.json`, including:
 - Next.js
 - Supabase client libraries
+- Cloudinary SDK
 - UI components (Radix UI, Tailwind CSS)
 - Form handling (React Hook Form, Zod)
 
@@ -137,19 +195,27 @@ This will install all dependencies listed in `package.json`, including:
 cp .env.example .env.local
 ```
 
-2. Open `.env.local` in your text editor and fill in your Supabase credentials:
+2. Open `.env.local` in your text editor and fill in your credentials:
 
 ```env
 # Supabase Configuration
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
+
+# Cloudinary Configuration (for profile pictures and progress photos)
+NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
+CLOUDINARY_API_KEY=your_cloudinary_api_key
+CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 ```
 
 **Important:**
 - Replace `your-project-id.supabase.co` with your actual Project URL from Supabase
 - Replace `your-anon-key-here` with your `anon public` key
 - Replace `your-service-role-key-here` with your `service_role secret` key
+- Replace `your_cloudinary_cloud_name` with your Cloud Name from Cloudinary Dashboard
+- Replace `your_cloudinary_api_key` with your API Key from Cloudinary Dashboard
+- Replace `your_cloudinary_api_secret` with your API Secret from Cloudinary Dashboard
 - **Never commit `.env.local` to Git** (it's already in `.gitignore`)
 
 ### Step 4: Verify Local Setup
@@ -218,14 +284,16 @@ The migration file includes Row Level Security policies to ensure users can only
 
 ## Storage Buckets Configuration
 
-The app requires two storage buckets for file uploads.
+The app uses a hybrid storage approach:
+- **Supabase Storage**: For payment receipts only
+- **Cloudinary**: For profile pictures and progress photos (configured separately)
 
-### Step 1: Create Storage Buckets
+### Step 1: Create Storage Bucket for Receipts
 
 1. In Supabase dashboard, go to **Storage**
 2. Click **"Create a new bucket"**
 
-#### Bucket 1: Payment Receipts
+#### Payment Receipts Bucket
 
 - **Name**: `receipts`
 - **Public bucket**: ❌ **No** (keep private)
@@ -233,13 +301,7 @@ The app requires two storage buckets for file uploads.
 - **File size limit**: `5 MB` (sufficient for receipt scans)
 - Click **"Create bucket"**
 
-#### Bucket 2: Progress Photos
-
-- **Name**: `progress-photos`
-- **Public bucket**: ❌ **No** (keep private)
-- **Allowed MIME types**: `image/*`
-- **File size limit**: `5 MB`
-- Click **"Create bucket"**
+**Note:** Profile pictures and progress photos are stored in Cloudinary (see Cloudinary Setup section), not in Supabase Storage.
 
 ### Step 2: Configure Storage Policies
 
@@ -277,39 +339,13 @@ USING (
 );
 ```
 
-#### Policy for `progress-photos` bucket:
-
-**Insert Policy:**
-```sql
--- Allow authenticated users to upload their own progress photos
-CREATE POLICY "Users can upload progress photos"
-ON storage.objects FOR INSERT
-TO authenticated
-WITH CHECK (
-  bucket_id = 'progress-photos' AND
-  (storage.foldername(name))[1] = auth.uid()::text
-);
-```
-
-**Select Policy:**
-```sql
--- Allow users to view their own photos, admins can view all
-CREATE POLICY "Users can view progress photos"
-ON storage.objects FOR SELECT
-TO authenticated
-USING (
-  bucket_id = 'progress-photos' AND (
-    (storage.foldername(name))[1] = auth.uid()::text OR
-    (SELECT role FROM profiles WHERE id = auth.uid()) = 'admin'
-  )
-);
-```
-
 ### Step 3: Test Storage Access
 
 1. Run your app locally: `npm run dev`
-2. Create a test user and try uploading a file
-3. Verify the file appears in the Supabase Storage dashboard
+2. Create a test user and try uploading a payment receipt
+3. Verify the receipt appears in the Supabase Storage dashboard under the `receipts` bucket
+
+**Note:** To test profile pictures and progress photos, make sure your Cloudinary credentials are configured in `.env.local`. These images will appear in your Cloudinary dashboard, not Supabase Storage.
 
 ---
 
@@ -392,6 +428,9 @@ In the Vercel import dialog:
 | `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase Project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase anon public key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Your Supabase service_role secret key |
+| `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME` | Your Cloudinary Cloud Name |
+| `CLOUDINARY_API_KEY` | Your Cloudinary API Key |
+| `CLOUDINARY_API_SECRET` | Your Cloudinary API Secret |
 
 3. Click **"Deploy"**
 
@@ -481,6 +520,28 @@ Vercel will automatically build and deploy the changes.
    - Enable Supabase's image optimization
    - Implement pagination for large data sets
 
+### Cloudinary Cost Monitoring
+
+1. **Monitor Usage:**
+   - Go to Cloudinary dashboard → **Reports** → **Usage**
+   - Check storage, bandwidth, and transformations
+   - The free tier is very generous - most small businesses stay within limits
+
+2. **Storage Optimization:**
+   - Cloudinary automatically optimizes images (WebP, quality, etc.)
+   - Old photos can be deleted if needed
+   - Use folders to organize by user for easier management
+
+3. **Bandwidth Optimization:**
+   - Cloudinary automatically serves optimized formats
+   - Signed URLs expire after 1 hour (configurable)
+   - CDN delivery is included in free tier
+
+4. **Transformation Limits:**
+   - Free tier includes 25,000 transformations/month
+   - App uses transformations for thumbnails and display
+   - Monitor if approaching limit
+
 ### Vercel Cost Monitoring
 
 1. **Check Usage:**
@@ -502,9 +563,15 @@ Vercel will automatically build and deploy the changes.
 
 ✅ **Supabase Free Tier:**
 - Database: < 500 MB
-- Storage: < 1 GB
+- Storage: < 1 GB (receipts only)
 - Bandwidth: < 2 GB/month
 - Active users: < 50,000/month
+
+✅ **Cloudinary Free Tier:**
+- Storage: < 25 GB (profile pics & progress photos)
+- Bandwidth: < 25 GB/month
+- Transformations: < 25,000/month
+- Unlimited uploads
 
 ✅ **Vercel Free Tier:**
 - Bandwidth: < 100 GB/month
@@ -513,6 +580,7 @@ Vercel will automatically build and deploy the changes.
 
 **Upgrade Path:**
 - **Supabase Pro**: $25/month (8 GB database, 100 GB storage)
+- **Cloudinary Plus**: $89/month (when free tier exceeded - rarely needed for small businesses)
 - **Vercel Pro**: $20/month (commercial use, more bandwidth)
 
 ---
@@ -557,14 +625,17 @@ All commands should complete without errors.
   - [ ] View assigned workouts
   - [ ] Mark workout as complete
   - [ ] View meal plan
-  - [ ] Upload payment receipt
-  - [ ] Log progress (measurements, photos)
+  - [ ] Upload payment receipt (Supabase)
+  - [ ] Upload profile picture (Cloudinary)
+  - [ ] Log progress (measurements, photos via Cloudinary)
   - [ ] View upcoming sessions
 
 - [ ] **File Uploads**
-  - [ ] Upload receipt (< 5 MB)
-  - [ ] Upload progress photo (< 5 MB)
-  - [ ] View uploaded files
+  - [ ] Upload payment receipt (< 5 MB) - stored in Supabase
+  - [ ] Upload profile picture (< 5 MB) - stored in Cloudinary
+  - [ ] Upload progress photos (< 5 MB each) - stored in Cloudinary
+  - [ ] View uploaded files with proper authentication
+  - [ ] Verify images are private (signed URLs expire)
 
 ---
 
@@ -582,33 +653,54 @@ All commands should complete without errors.
 #### 2. "Storage bucket not found"
 
 **Solution:**
-- Verify buckets are created in Supabase Storage
-- Check bucket names match exactly: `receipts` and `progress-photos`
+- Verify the `receipts` bucket is created in Supabase Storage
+- Check bucket name matches exactly: `receipts`
 - Ensure storage policies are configured
+- Note: Profile pictures and progress photos use Cloudinary, not Supabase Storage
 
-#### 3. "Permission denied" when uploading files
+#### 3. "Permission denied" when uploading payment receipts
 
 **Solution:**
-- Check RLS policies on storage buckets
+- Check RLS policies on `receipts` storage bucket in Supabase
 - Verify user is authenticated
-- Ensure file path follows pattern: `bucket-name/user-id/filename`
+- Ensure file path follows pattern: `receipts/user-id/filename`
 
-#### 4. "Cannot read properties of null"
+#### 4. Cloudinary upload fails or images don't display
+
+**Solution:**
+- Verify Cloudinary environment variables are set:
+  - `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME`
+  - `CLOUDINARY_API_KEY`
+  - `CLOUDINARY_API_SECRET`
+- Check Cloudinary dashboard for upload errors
+- Ensure API credentials are correct (not expired)
+- Verify file size is under 5 MB
+- Check browser console for detailed error messages
+
+#### 5. Images return 401 or 403 errors
+
+**Solution:**
+- This is expected for private Cloudinary images
+- Signed URLs are generated server-side with 1-hour expiration
+- If images don't load, check that signed URL generation is working
+- Refresh the page to get new signed URLs
+
+#### 6. "Cannot read properties of null"
 
 **Solution:**
 - Check that database migration ran successfully
 - Verify all tables exist in Supabase Table Editor
 - Ensure user profile was created in `profiles` table
 
-#### 5. Build fails on Vercel
+#### 7. Build fails on Vercel
 
 **Solution:**
 - Check build logs for specific errors
 - Verify all dependencies are in `package.json`
-- Ensure environment variables are set in Vercel
+- Ensure all environment variables are set in Vercel (including Cloudinary)
 - Try building locally: `npm run build`
 
-#### 6. Emails not being delivered
+#### 8. Emails not being delivered
 
 **Solution:**
 - Check spam folder
@@ -619,6 +711,7 @@ All commands should complete without errors.
 ### Getting Help
 
 - **Supabase Docs**: [https://supabase.com/docs](https://supabase.com/docs)
+- **Cloudinary Docs**: [https://cloudinary.com/documentation](https://cloudinary.com/documentation)
 - **Vercel Docs**: [https://vercel.com/docs](https://vercel.com/docs)
 - **Next.js Docs**: [https://nextjs.org/docs](https://nextjs.org/docs)
 - **GitHub Issues**: Create an issue in your repository
