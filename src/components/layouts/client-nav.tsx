@@ -4,34 +4,30 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
-  LayoutDashboard,
-  Dumbbell,
-  UtensilsCrossed,
-  Calendar,
-  CreditCard,
-  TrendingUp,
-  User,
-  LogOut,
-  Dumbbell as Logo,
-} from "lucide-react";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { LayoutDashboard, Bell, LogOut, Zap } from "lucide-react";
 import { toast } from "sonner";
+import { getInitials } from "@/lib/utils";
 
-const navItems = [
-  { href: "/dashboard", label: "Home", icon: LayoutDashboard },
-  { href: "/workouts", label: "Workouts", icon: Dumbbell },
-  { href: "/meals", label: "Meals", icon: UtensilsCrossed },
-  { href: "/schedule", label: "Schedule", icon: Calendar },
-  { href: "/payments", label: "Pay", icon: CreditCard },
+const NAV_ITEMS = [
+  { href: "/my-dashboard", label: "Dashboard", icon: LayoutDashboard },
 ];
 
-const moreItems = [
-  { href: "/progress", label: "Progress", icon: TrendingUp },
-  { href: "/profile", label: "Profile", icon: User },
-];
+interface ClientNavProps {
+  profile: { full_name: string; email: string; avatar_url?: string | null; role: string };
+  unreadCount?: number;
+}
 
-export function ClientTopBar() {
+export function ClientNav({ profile, unreadCount = 0 }: ClientNavProps) {
+  const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
 
@@ -43,64 +39,72 @@ export function ClientTopBar() {
   }
 
   return (
-    <header className="sticky top-0 z-30 border-b bg-card px-4 py-3">
-      <div className="mx-auto flex max-w-2xl items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Logo className="h-5 w-5 text-primary" />
-          <span className="font-bold text-primary">GetFitWithJ</span>
+    <header className="sticky top-0 z-40 border-b bg-white shadow-sm">
+      <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
+        <div className="flex items-center gap-6">
+          <Link href="/my-dashboard" className="flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500">
+              <Zap className="h-4 w-4 text-white" />
+            </div>
+            <span className="font-bold text-slate-900">GetFitWithJ</span>
+          </Link>
+          <nav className="hidden sm:flex items-center gap-1">
+            {NAV_ITEMS.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                  pathname === item.href
+                    ? "bg-blue-50 text-blue-600"
+                    : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                )}
+              >
+                <item.icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+            ))}
+          </nav>
         </div>
+
         <div className="flex items-center gap-2">
-          <Link href="/progress">
-            <Button variant="ghost" size="icon" className="h-9 w-9">
-              <TrendingUp className="h-5 w-5" />
-            </Button>
-          </Link>
-          <Link href="/profile">
-            <Button variant="ghost" size="icon" className="h-9 w-9">
-              <User className="h-5 w-5" />
-            </Button>
-          </Link>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9"
-            onClick={handleLogout}
-          >
-            <LogOut className="h-5 w-5" />
-          </Button>
+          {unreadCount > 0 && (
+            <div className="relative">
+              <Bell className="h-5 w-5 text-slate-500" />
+              <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[10px] text-white font-bold">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            </div>
+          )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="rounded-full h-8 w-8 p-0">
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={profile.avatar_url || undefined} />
+                  <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-semibold">
+                    {getInitials(profile.full_name)}
+                  </AvatarFallback>
+                </Avatar>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <div className="px-2 py-1.5">
+                <p className="text-sm font-medium truncate">{profile.full_name}</p>
+                <p className="text-xs text-slate-400 truncate">{profile.email}</p>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout} className="text-red-600">
+                <LogOut className="h-4 w-4 mr-2" />Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </header>
   );
 }
 
-export function ClientBottomNav() {
-  const pathname = usePathname();
-
-  return (
-    <nav className="fixed bottom-0 left-0 right-0 z-30 border-t bg-card pb-safe">
-      <div className="mx-auto flex max-w-2xl items-center justify-around px-2 py-1">
-        {navItems.map((item) => {
-          const isActive =
-            pathname === item.href ||
-            (item.href !== "/dashboard" && pathname.startsWith(item.href));
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex flex-col items-center gap-0.5 rounded-md px-3 py-2 text-xs transition-colors touch-target",
-                isActive
-                  ? "text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <item.icon className={cn("h-5 w-5", isActive && "stroke-[2.5]")} />
-              <span className="font-medium">{item.label}</span>
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
-  );
-}
+// Legacy export for backward compatibility
+export { ClientNav as ClientTopBar };
+export function ClientBottomNav() { return null; }
